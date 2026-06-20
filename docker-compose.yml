@@ -68,6 +68,7 @@ services:
     restart: unless-stopped
     environment:
       - ENVIRONMENT=production
+      - HOST=0.0.0.0
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
       - MYSQL_USER=${MYSQL_USER:-xianyu}
@@ -128,6 +129,7 @@ services:
     restart: unless-stopped
     environment:
       - ENVIRONMENT=production
+      - HOST=0.0.0.0
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
       - MYSQL_USER=${MYSQL_USER:-xianyu}
@@ -181,6 +183,7 @@ services:
     restart: unless-stopped
     environment:
       - ENVIRONMENT=production
+      - HOST=0.0.0.0
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
       - MYSQL_USER=${MYSQL_USER:-xianyu}
@@ -235,7 +238,7 @@ services:
     environment:
       - TZ=Asia/Shanghai
     ports:
-      - "${FRONTEND_PORT:-9000}:80"
+      - "${FRONTEND_PORT:-9100}:80"
     networks:
       - xianyu-network
     depends_on:
