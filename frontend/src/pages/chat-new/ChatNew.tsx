@@ -879,15 +879,22 @@ export function ChatNew() {
   const handleSendMessage = () => sendMessageText(inputText, true)
 
   // ==================== 发送图片 ====================
+  const getClipboardImageFileName = (type: string) => {
+    const extMap: Record<string, string> = {
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp',
+      'image/gif': 'gif',
+    }
+    return `clipboard-${Date.now()}.${extMap[type] || 'png'}`
+  }
+
   const handlePickImage = () => {
     if (sending) return
     imageInputRef.current?.click()
   }
 
-  const handleImageSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    // 选完即清空 value，保证同一张图片可重复选择触发 onChange
-    e.target.value = ''
+  const sendImageFile = async (file: File) => {
     if (!file || !activeAccountId || !activeCid || sending) return
 
     if (!file.type.startsWith('image/')) {
@@ -906,35 +913,82 @@ export function ChatNew() {
     }
 
     setSending(true)
-    const res = await sendImageMessage(activeAccountId, activeCid, conv.otherUserId, file)
-    // 成功用CDN地址；失败则用本地预览地址，保证用户都能看到所发图片
-    const displayUrl = res.success && res.data?.imageUrl ? res.data.imageUrl : URL.createObjectURL(file)
-    // 无论成功失败，都把这条图片消息展示在聊天记录中
-    const sentMsg: ChatMessage = {
-      messageId: res.data?.messageId || '',
-      senderId: activeAccountId,
-      senderName: '',
-      isSelf: true,
-      type: 'image',
-      text: '',
-      images: [displayUrl],
-      time: Date.now(),
-      failed: !res.success,
-      failReason: res.success ? undefined : (res.message || '发送失败'),
+    try {
+      const res = await sendImageMessage(activeAccountId, activeCid, conv.otherUserId, file)
+      // 成功用CDN地址；失败则用本地预览地址，保证用户都能看到所发图片
+      const displayUrl = res.success && res.data?.imageUrl ? res.data.imageUrl : URL.createObjectURL(file)
+      // 无论成功失败，都把这条图片消息展示在聊天记录中
+      const sentMsg: ChatMessage = {
+        messageId: res.data?.messageId || '',
+        senderId: activeAccountId,
+        senderName: '',
+        isSelf: true,
+        type: 'image',
+        text: '',
+        images: [displayUrl],
+        time: Date.now(),
+        failed: !res.success,
+        failReason: res.success ? undefined : (res.message || '发送失败'),
+      }
+      setMessages((prev) => [...prev, sentMsg])
+      if (res.success) {
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.cid === activeCid
+              ? { ...c, lastMessageSummary: '[图片]', lastMessageTime: sentMsg.time }
+              : c,
+          ),
+        )
+      } else {
+        addToast({ message: res.message || '发送失败', type: 'error' })
+      }
+    } catch (e: any) {
+      const failReason = e?.message || '发送失败'
+      const displayUrl = URL.createObjectURL(file)
+      const sentMsg: ChatMessage = {
+        messageId: '',
+        senderId: activeAccountId,
+        senderName: '',
+        isSelf: true,
+        type: 'image',
+        text: '',
+        images: [displayUrl],
+        time: Date.now(),
+        failed: true,
+        failReason,
+      }
+      setMessages((prev) => [...prev, sentMsg])
+      addToast({ message: failReason, type: 'error' })
+    } finally {
+      setSending(false)
     }
-    setMessages((prev) => [...prev, sentMsg])
-    if (res.success) {
-      setConversations((prev) =>
-        prev.map((c) =>
-          c.cid === activeCid
-            ? { ...c, lastMessageSummary: '[图片]', lastMessageTime: sentMsg.time }
-            : c,
-        ),
-      )
-    } else {
-      addToast({ message: res.message || '发送失败', type: 'error' })
+  }
+
+  const handleImageSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    // 选完即清空 value，保证同一张图片可重复选择触发 onChange
+    e.target.value = ''
+    if (!file) return
+    await sendImageFile(file)
+  }
+
+  const handlePasteImage = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = Array.from(e.clipboardData?.items || [])
+    const imageItem = items.find((item) => item.kind === 'file' && item.type.startsWith('image/'))
+    if (!imageItem) return
+
+    e.preventDefault()
+    const blob = imageItem.getAsFile()
+    if (!blob) {
+      addToast({ message: '读取剪贴板图片失败', type: 'error' })
+      return
     }
-    setSending(false)
+
+    const file = new File([blob], getClipboardImageFileName(blob.type), {
+      type: blob.type || 'image/png',
+      lastModified: Date.now(),
+    })
+    await sendImageFile(file)
   }
 
   // ==================== 时间格式化 ====================
@@ -1338,6 +1392,7 @@ export function ChatNew() {
             <textarea
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
+              onPaste={handlePasteImage}
               onKeyDown={(e) => {
                 // Enter 发送；Shift+Enter / Ctrl+Enter 在输入框内换行
                 // 中文输入法选词阶段的回车（compositionend 前）不触发发送
